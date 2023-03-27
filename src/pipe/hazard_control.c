@@ -63,7 +63,9 @@ bool check_load_use_hazard(opcode_t D_opcode, uint8_t D_src1, uint8_t D_src2,
 comb_logic_t handle_hazards(opcode_t D_opcode, uint8_t D_src1, uint8_t D_src2, 
                             opcode_t X_opcode, uint8_t X_dst, bool X_condval) {
     /* Students: Change this code */
-    pipe_control_stage(S_FETCH, false, false);
+    // This will need to be updated in week 2, good enough for week 1
+    bool f_stall = F_out->status == STAT_HLT || F_out->status == STAT_INS;
+    pipe_control_stage(S_FETCH, false, f_stall);
     pipe_control_stage(S_DECODE, false, false);
     pipe_control_stage(S_EXECUTE, false, false);
     pipe_control_stage(S_MEMORY, false, false);
