@@ -79,7 +79,8 @@ cache_t *create_cache(int A_in, int B_in, int C_in, int d_in) {
         }
     }
 
-    next_lru = 0;
+    // make gcc happy, replace this with zero and comment out _log if you want
+    next_lru = _log(0);
     return cache;
 }
 
