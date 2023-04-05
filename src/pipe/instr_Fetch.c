@@ -38,10 +38,17 @@ select_PC(uint64_t pred_PC,                                     // The predicted
      * You may modify below it. 
      */
     if (D_opcode == OP_RET && val_a == RET_FROM_MAIN_ADDR) {
-        *current_PC = 0; // PC can't be 0 normally.
+        *current_PC = 0; 
         return;
     }
-    // Modify starting here.
+    if (M_opcode == OP_B_COND && !M_cond_val ) {
+        *current_PC = seq_succ;
+    } 
+    else if (D_opcode == OP_RET) {
+        *current_PC = val_a;
+    } else {
+        *current_PC = pred_PC;
+    }
     return;
 }
 
@@ -63,7 +70,25 @@ predict_PC(uint64_t current_PC, uint32_t insnbits, opcode_t op,
     if (!current_PC) {
         return; // We use this to generate a halt instruction.
     }
-    // Modify starting here.
+    if (op == OP_ADRP)
+    {
+        *predicted_PC = current_PC + 4;
+        *seq_succ = current_PC;
+        *seq_succ = *(seq_succ) & 0xFFFFFFFFFFFFF000;
+        
+    }
+    
+    if (op == OP_B_COND) {
+        *predicted_PC = current_PC + (bitfield_s64(insnbits, 5, 19) << 2);
+    } else if (op == OP_BL || op == OP_B ) {
+
+         *predicted_PC = current_PC + ((bitfield_s64(insnbits, 0, 26)) << 2);
+    } else { 
+
+        *predicted_PC = current_PC + 4;
+    }
+    
+    *seq_succ = current_PC + 4;
     return;
 }
 
@@ -76,8 +101,30 @@ predict_PC(uint64_t current_PC, uint32_t insnbits, opcode_t op,
 
 static
 void fix_instr_aliases(uint32_t insnbits, opcode_t *op) {
+    if (*op == OP_SUBS_RR) {
+
+        if (bitfield_u32(insnbits, 0, 5) == 5) {
+         *op = OP_CMP_RR; 
+            return;
+        } 
+        *op = OP_SUBS_RR;
+    }  else if (*op == OP_UBFM) {
+        if (bitfield_u32(insnbits, 10, 6) ==  0x3F) {
+            *op = OP_LSR;
+            return;
+        } 
+
+        *op = OP_LSL;
+    } else if (*op == OP_ANDS_RR) {
+        if (bitfield_u32(insnbits, 0, 5) == 0x1F) {
+            *op = OP_TST_RR;
+            return;
+        } 
+        *op = OP_ANDS_RR;
+    }
     return;
 }
+
 
 /*
  * Fetch stage logic.
@@ -96,7 +143,8 @@ void fix_instr_aliases(uint32_t insnbits, opcode_t *op) {
 comb_logic_t fetch_instr(f_instr_impl_t *in, d_instr_impl_t *out) {
     bool imem_err = 0;
     uint64_t current_PC;
-    select_PC(/*Fill the rest of these in.*/, &current_PC);
+
+    select_PC(in->pred_PC, X_out->op, X_out->val_a, M_out->op, M_out->cond_holds, M_out->seq_succ_PC, &current_PC);
     /* 
      * Students: This case is for generating HLT instructions
      * to stop the pipeline. Only write your code in the **else** case. 
@@ -108,11 +156,38 @@ comb_logic_t fetch_instr(f_instr_impl_t *in, d_instr_impl_t *out) {
         imem_err = false;
     }
     else {
-        
+        imem(current_PC, &(out->insnbits), &imem_err);
+        out->op = itable[bitfield_u32(out->insnbits, 21, 11)];
+        fix_instr_aliases(out->insnbits, &(out->op));
+
+    predict_PC(current_PC, out->insnbits, out->op, &(F_PC), &(out->seq_succ_PC ));
+
+        if (out->op == OP_ADRP) {
+
+           out->seq_succ_PC = ((out->seq_succ_PC >> 12) << 12);
+        }
     }
-    if (out->op == OP_HLT) {
-        in->status = STAT_HLT;
+   
+    if (imem_err || out->op == OP_ERROR) {
+        out->status = STAT_INS;
+        in->status = STAT_INS;
+
+    } else {
+        out->status = in->status;
+    }
+
+        //Hlt
+     if (out->op == OP_HLT) {
         out->status = STAT_HLT;
+        in->status = STAT_HLT;
     }
+
+
+    out->print_op = out->op;
+
+
+    
     return;
 }
+
+
